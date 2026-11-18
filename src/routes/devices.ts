@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm'
-import { Router } from 'express'
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import type { Hono } from 'hono'
 import type { z } from 'zod'
+import type { AppEnv } from '../app.js'
 import { db } from '../db/index.js'
 import { deviceSettings, devices } from '../db/schema.js'
-import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js'
+import { ApiError } from '../lib/http.js'
 import { requireAdmin } from '../middleware/requireAdmin.js'
-import { ApiError, ok, okWithMeta } from '../lib/http.js'
+import { requireAuth } from '../middleware/requireAuth.js'
 import {
   deviceParamsSchema,
   pumpCommandSchema,
@@ -14,16 +14,14 @@ import {
   readingsQuerySchema,
   settingsSchema,
 } from '../schemas/api.js'
-import { sendPumpCommand } from '../services/pump.js'
 import { evaluateAutoPump } from '../services/autoPump.js'
+import { sendPumpCommand } from '../services/pump.js'
 import {
   getDeviceDetail,
   getPumpLogs,
   getReadings,
   listDevices,
 } from '../services/readings.js'
-
-export const devicesRouter = Router()
 
 function parse<T>(schema: z.ZodType<T>, data: unknown): T {
   const result = schema.safeParse(data)
@@ -37,59 +35,9 @@ function iso(value: Date): string {
   return value.toISOString()
 }
 
-devicesRouter.get('/devices', requireAuth, async (_req, res) => {
-  ok(res, await listDevices())
-})
-
-devicesRouter.get('/devices/:id', requireAuth, async (req, res) => {
-  const { id } = parse(deviceParamsSchema, req.params)
-  ok(res, await getDeviceDetail(id))
-})
-
-devicesRouter.get('/devices/:id/readings', requireAuth, async (req, res) => {
-  const { id } = parse(deviceParamsSchema, req.params)
-  const query = parse(readingsQuerySchema, req.query)
-  const { data, meta } = await getReadings(id, query)
-  okWithMeta(res, data, meta)
-})
-
-devicesRouter.get('/devices/:id/pump-logs', requireAuth, async (req, res) => {
-  const { id } = parse(deviceParamsSchema, req.params)
-  const query = parse(pumpLogsQuerySchema, req.query)
-  const { data, meta } = await getPumpLogs(id, query)
-  okWithMeta(res, data, meta)
-})
-
-// Rate limit: 10 perintah pompa per menit per user
-const pumpLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 10,
-  standardHeaders: false,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const userId = (req as AuthedRequest).session?.user?.id
-    // ipKeyGenerator menormalkan IPv6 ke /56 agar tidak bisa di-bypass
-    return userId ?? (req.ip ? ipKeyGenerator(req.ip) : 'unknown')
-  },
-  handler: (_req, res) => {
-    res
-      .status(429)
-      .json({ error: { code: 'RATE_LIMITED', message: 'Terlalu banyak perintah pompa. Tunggu sebentar.' } })
-  },
-})
-
-devicesRouter.post(
-  '/devices/:id/pump',
-  requireAuth,
-  requireAdmin,
-  pumpLimiter,
-  async (req, res) => {
-    const { id } = parse(deviceParamsSchema, req.params)
-    const { command } = parse(pumpCommandSchema, req.body)
-    const result = await sendPumpCommand(id, command, (req as AuthedRequest).session.user.id)
-    ok(res, result, 202)
-  },
-)
+// Rate limit 10 perintah pompa / menit / user. State per isolate; Worker bisa
+// berpindah instance, tapi ini cukup sebagai perlindungan dasar.
+const pumpHits = new Map<string, { count: number; resetAt: number }>()
 
 async function getOrCreateSettings(deviceId: string) {
   const [device] = await db
@@ -118,47 +66,98 @@ async function getOrCreateSettings(deviceId: string) {
   }
 }
 
-devicesRouter.get('/devices/:id/settings', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = parse(deviceParamsSchema, req.params)
-  ok(res, await getOrCreateSettings(id))
-})
-
-devicesRouter.put('/devices/:id/settings', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = parse(deviceParamsSchema, req.params)
-  const { moisture_threshold, pump_mode } = parse(settingsSchema, req.body)
-
-  const [device] = await db
-    .select({ id: devices.id })
-    .from(devices)
-    .where(eq(devices.id, id))
-    .limit(1)
-  if (!device) throw ApiError.notFound('Perangkat tidak ditemukan')
-
-  const set: Partial<typeof deviceSettings.$inferInsert> = { updatedAt: new Date() }
-  if (moisture_threshold !== undefined) set.moistureThreshold = moisture_threshold
-  if (pump_mode !== undefined) set.pumpMode = pump_mode
-
-  await db
-    .insert(deviceSettings)
-    .values({ deviceId: id, ...set })
-    .onConflictDoUpdate({
-      target: deviceSettings.deviceId,
-      set,
-    })
-
-  const [row] = await db
-    .select()
-    .from(deviceSettings)
-    .where(eq(deviceSettings.deviceId, id))
-    .limit(1)
-
-  ok(res, {
-    device_id: row!.deviceId,
-    moisture_threshold: row!.moistureThreshold,
-    pump_mode: row!.pumpMode,
-    updated_at: iso(row!.updatedAt),
+export function registerDeviceRoutes(app: Hono<AppEnv>) {
+  app.get('/api/devices', requireAuth, async (c) => {
+    return c.json({ data: await listDevices() })
   })
 
-  // Setpoint/mode baru bisa langsung mengubah keputusan → evaluasi sekarang
-  void evaluateAutoPump(id)
-})
+  app.get('/api/devices/:id', requireAuth, async (c) => {
+    const { id } = parse(deviceParamsSchema, c.req.param())
+    return c.json({ data: await getDeviceDetail(id) })
+  })
+
+  app.get('/api/devices/:id/readings', requireAuth, async (c) => {
+    const { id } = parse(deviceParamsSchema, c.req.param())
+    const query = parse(readingsQuerySchema, c.req.query())
+    const { data, meta } = await getReadings(id, query)
+    return c.json({ data, meta })
+  })
+
+  app.get('/api/devices/:id/pump-logs', requireAuth, async (c) => {
+    const { id } = parse(deviceParamsSchema, c.req.param())
+    const query = parse(pumpLogsQuerySchema, c.req.query())
+    const { data, meta } = await getPumpLogs(id, query)
+    return c.json({ data, meta })
+  })
+
+  app.post(
+    '/api/devices/:id/pump',
+    requireAuth,
+    requireAdmin,
+    async (c, next) => {
+      const key = c.get('session')?.user.id ?? 'unknown'
+      const now = Date.now()
+      const cur = pumpHits.get(key)
+      if (!cur || now > cur.resetAt) {
+        pumpHits.set(key, { count: 1, resetAt: now + 60_000 })
+      } else if (cur.count >= 10) {
+        throw ApiError.rateLimited('Terlalu banyak perintah pompa. Tunggu sebentar.')
+      } else {
+        cur.count++
+      }
+      await next()
+    },
+    async (c) => {
+      const { id } = parse(deviceParamsSchema, c.req.param())
+      const { command } = parse(pumpCommandSchema, await c.req.json())
+      const result = await sendPumpCommand(
+        id,
+        command,
+        c.get('session')!.user.id,
+      )
+      return c.json({ data: result }, 202)
+    },
+  )
+
+  app.get('/api/devices/:id/settings', requireAuth, requireAdmin, async (c) => {
+    const { id } = parse(deviceParamsSchema, c.req.param())
+    return c.json({ data: await getOrCreateSettings(id) })
+  })
+
+  app.put('/api/devices/:id/settings', requireAuth, requireAdmin, async (c) => {
+    const { id } = parse(deviceParamsSchema, c.req.param())
+    const { moisture_threshold, pump_mode } = parse(settingsSchema, await c.req.json())
+
+    const [device] = await db
+      .select({ id: devices.id })
+      .from(devices)
+      .where(eq(devices.id, id))
+      .limit(1)
+    if (!device) throw ApiError.notFound('Perangkat tidak ditemukan')
+
+    const set: Partial<typeof deviceSettings.$inferInsert> = { updatedAt: new Date() }
+    if (moisture_threshold !== undefined) set.moistureThreshold = moisture_threshold
+    if (pump_mode !== undefined) set.pumpMode = pump_mode
+
+    await db
+      .insert(deviceSettings)
+      .values({ deviceId: id, ...set })
+      .onConflictDoUpdate({ target: deviceSettings.deviceId, set })
+
+    const [row] = await db
+      .select()
+      .from(deviceSettings)
+      .where(eq(deviceSettings.deviceId, id))
+      .limit(1)
+
+    void evaluateAutoPump(id)
+    return c.json({
+      data: {
+        device_id: row!.deviceId,
+        moisture_threshold: row!.moistureThreshold,
+        pump_mode: row!.pumpMode,
+        updated_at: iso(row!.updatedAt),
+      },
+    })
+  })
+}

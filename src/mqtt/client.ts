@@ -78,6 +78,12 @@ export function getMqttClient(): MqttClient {
 }
 
 export function publishPumpSet(deviceId: string, command: string, requestId: string) {
+  // Worker stateless tidak bisa menjaga koneksi MQTT persisten. Perintah tetap
+  // tercatat di pump_logs, tapi publikasi butuh subscriber/bridge terpisah.
+  if (process.env.IS_WORKER === '1') {
+    logger.warn({ deviceId, command }, 'Worker: pump/set tidak dipublish (tanpa koneksi MQTT)')
+    return
+  }
   const c = getMqttClient()
   const topic = `${env.MQTT_TOPIC_PREFIX}/${deviceId}/pump/set`
   const payload = JSON.stringify({ command, request_id: requestId })

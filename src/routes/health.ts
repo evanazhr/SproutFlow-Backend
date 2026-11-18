@@ -1,7 +1,6 @@
-import { Router } from 'express'
+import type { Hono } from 'hono'
+import type { AppEnv } from '../app.js'
 
-export const healthRouter = Router()
-
-healthRouter.get('/health', (_req, res) => {
-  res.json({ data: { status: 'ok' } })
-})
+export function registerHealthRoutes(app: Hono<AppEnv>) {
+  app.get('/api/health', (c) => c.json({ data: { status: 'ok' } }))
+}

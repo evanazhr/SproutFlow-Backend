@@ -3,15 +3,15 @@ import { Pool } from 'pg'
 import { env } from '../env.js'
 import * as schema from './schema.js'
 
-// TLS otomatis untuk semua host selain localhost/127.0.0.1 — mencakup Neon
-// maupun Supabase (pooler/direct). pg >=8.16 menafsirkan `sslmode=require`
-// sebagai verify-full dan menimpa `rejectUnauthorized: false`, sehingga
-// koneksi ke pooler Supabase gagal dengan SELF_SIGNED_CERT_IN_CHAIN. Karena itu
-// parameter sslmode dilepas dari connection string; TLS tetap diatur lewat ssl.
-const parsedUrl = new URL(env.DATABASE_URL)
+// Hyperdrive (Cloudflare) sudah menangani TLS ke Postgres, jadi koneksinya
+// memakai connection string lokal tanpa ssl. Di luar Workers, TLS diaktifkan
+// otomatis untuk host non-localhost (Supabase/Neon).
+const hyperdrive = process.env.HYPERDRIVE_CONNECTION_STRING
+const raw = hyperdrive || env.DATABASE_URL
+const parsedUrl = new URL(raw)
 const isLocal = parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1'
 const sslDisabled = parsedUrl.searchParams.get('sslmode') === 'disable'
-const useSsl = !isLocal && !sslDisabled
+const useSsl = !hyperdrive && !isLocal && !sslDisabled
 parsedUrl.searchParams.delete('sslmode')
 
 export const pool = new Pool({

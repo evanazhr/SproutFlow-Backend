@@ -1,5 +1,3 @@
-import type { Response } from 'express'
-
 export class ApiError extends Error {
   status: number
   code: string
@@ -30,16 +28,4 @@ export class ApiError extends Error {
   static rateLimited(message = 'Terlalu banyak permintaan, coba lagi nanti') {
     return new ApiError(429, 'RATE_LIMITED', message)
   }
-}
-
-export function ok(res: Response, data: unknown, status = 200) {
-  return res.status(status).json({ data })
-}
-
-export function okWithMeta(
-  res: Response,
-  data: unknown,
-  meta: { page: number; limit: number; total: number },
-) {
-  return res.status(200).json({ data, meta })
 }

@@ -1,5 +1,7 @@
-import 'dotenv/config'
 import { z } from 'zod'
+
+// dotenv dipanggil oleh entry point Node (src/index.ts). Di Workers, env
+// binding disuntikkan ke process.env oleh worker/index.ts sebelum import app.
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

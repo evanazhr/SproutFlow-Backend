@@ -1,11 +1,10 @@
-import type { NextFunction, Request, Response } from 'express'
+import type { MiddlewareHandler } from 'hono'
 import { ApiError } from '../lib/http.js'
-import { type AuthedRequest } from './requireAuth.js'
+import type { AppEnv } from '../app.js'
 
-export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
-  const session = (req as AuthedRequest).session
-  if (session?.user.role !== 'admin') {
-    return next(ApiError.forbidden('Hanya admin yang dapat melakukan aksi ini'))
+export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (c.get('session')?.user.role !== 'admin') {
+    throw ApiError.forbidden('Hanya admin yang dapat melakukan aksi ini')
   }
-  next()
+  await next()
 }

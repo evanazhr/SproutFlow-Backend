@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sproutflow-api",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "routes": [
+    { "pattern": "api-iot.evanazhar.my.id", "zone_name": "evanazhar.my.id" }
+  ],
+
+  // Supabase/Neon butuh Hyperdrive agar pg bisa konek dari Workers.
+  // Buat di Dashboard -> Hyperdrive, lalu uncomment dan isi id-nya:
+  // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<hyperdrive-id>" }],
+
+  "observability": { "enabled": true }
+}
