@@ -1,0 +1,18 @@
+# Topik: plant/{device_id}/{telemetry,pump/status,pump/set,status}
+# Hak akses mengikuti kontrak di README / PRD.
+
+# Backend: publish ke pump/set + subscribe seluruh telemetry/status.
+user backend
+topic readwrite plant/#
+
+# ESP32 (device): kirim telemetry & status, dengar perintah pompa saja.
+user device
+topic write plant/+/telemetry
+topic write plant/+/pump/status
+topic write plant/+/status
+topic read  plant/+/pump/set
+
+# Frontend (viewer): subscribe-only. VITE_* ikut ter-embed di bundle browser,
+# jadi jangan pernah pakai akun backend di sini.
+user viewer
+topic read plant/#

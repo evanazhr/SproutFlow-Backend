@@ -1,0 +1,48 @@
+# Infrastruktur lokal SproutFlow: Postgres + Mosquitto (MQTT + WebSocket).
+# Docker : docker compose up -d --build
+# Podman : podman compose up -d --build
+# Opsi override port/credential: salin compose.env.example -> compose.env lalu
+#         docker compose --env-file compose.env up -d --build
+#         (atau podman compose --env-file compose.env up -d --build)
+
+name: sproutflow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sproutflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sproutflow}
+    ports:
+      # backend .env.local.example: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sproutflow
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sproutflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    # Config (mosquitto.conf/passwd/acl) di-build ke image, bukan di-bind mount,
+    # agar jalan di Docker & Podman (SELinux) tanpa opsi :Z.
+    build:
+      context: ./mosquitto
+    image: sproutflow-mosquitto:local
+    container_name: sproutflow-mosquitto
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"      # TCP  -> backend (mqtt://) + ESP32 di LAN
+      - "${MQTT_WS_PORT:-9001}:9001"   # WS   -> frontend (ws://localhost:9001)
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+volumes:
+  postgres_data:
+  mosquitto_data:
+  mosquitto_log:

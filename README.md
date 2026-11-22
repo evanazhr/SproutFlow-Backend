@@ -12,6 +12,46 @@ psql "$DATABASE_URL" -f seed.sql   # seed perangkat pertama (plant-001)
 pnpm dev                    # http://localhost:4000
 ```
 
+## Infrastruktur lokal (Postgres + Mosquitto)
+
+`docker-compose.yml` menyiapkan Postgres (`:5432`) dan Mosquitto — MQTT TCP
+`:1883` untuk backend/ESP32 dan WebSocket `:9001` untuk frontend. Butuh Docker
+atau Podman yang sudah terpasang.
+
+```bash
+docker compose up -d --build      # atau: podman compose up -d --build
+docker compose logs -f mosquitto
+docker compose down               # tambah -v untuk menghapus volume data
+```
+
+Data Postgres dan pesan retained Mosquitto disimpan di named volume, jadi
+bertahan setelah container di-restart. Untuk override port/credential Postgres,
+salin `compose.env.example` ke `compose.env` lalu jalankan dengan
+`--env-file compose.env`.
+
+Setelah compose jalan, pakai preset `pnpm env:local` di backend & frontend
+(credential MQTT sudah terisi di contohnya). Untuk ESP32, samakan `MQTT_HOST`
+di `firmware/sproutflow_esp32/config_local.h` dengan IP LAN laptop.
+
+| Akun MQTT | Hak akses | Dipakai oleh |
+|---|---|---|
+| `backend` | read/write `plant/#` | backend (publish `pump/set`) |
+| `device` | write telemetry/status, read `plant/+/pump/set` | ESP32 |
+| `viewer` | read-only `plant/#` | frontend via WebSocket |
+
+Password default ketiga akun adalah `sproutflow` (hash ada di
+`mosquitto/passwd`). Untuk mengganti:
+
+```bash
+mosquitto_passwd -b mosquitto/passwd backend password_baru
+# ulangi untuk device & viewer, lalu build ulang image mosquitto:
+docker compose up -d --build mosquitto
+```
+
+> `mosquitto.conf`, `passwd`, dan `acl` disalin ke dalam image lewat
+> `mosquitto/Dockerfile` (bukan bind mount), supaya kompatibel dengan Docker
+> maupun Podman/SELinux. Hak akses tiap akun diatur di `mosquitto/acl`.
+
 ## Catatan
 
 - Handler auth di `/api/auth/*` (Better Auth, Google OAuth). Redirect URI OAuth:
