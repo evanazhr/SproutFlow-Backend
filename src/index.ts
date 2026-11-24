@@ -15,8 +15,8 @@ import { startWatchdog } from './services/watchdog.js'
 dns.setDefaultResultOrder('ipv4first')
 net.setDefaultAutoSelectFamily(false)
 
-const server = serve({ fetch: app.fetch, port: env.PORT }, () => {
-  logger.info(`SproutFlow backend (Hono) berjalan di port ${env.PORT}`)
+const server = serve({ fetch: app.fetch, port: env.PORT, hostname: '0.0.0.0' }, () => {
+  logger.info(`SproutFlow backend (Hono) berjalan di 0.0.0.0:${env.PORT}`)
   getMqttClient()
   const stopWatchdog = startWatchdog()
   const stopAutoPump = startAutoPump()

@@ -1,24 +1,30 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { username } from 'better-auth/plugins'
 import { db } from './db/index.js'
 import { account, session, user, verification } from './db/schema.js'
-import { env } from './env.js'
+import { env, frontendOrigins, isProd } from './env.js'
 
 const authHost = new URL(env.BETTER_AUTH_URL).hostname
 const isLocalAuthUrl = authHost === 'localhost' || authHost === '127.0.0.1'
+const isEvanazharDomain = authHost === 'evanazhar.my.id' || authHost.endsWith('.evanazhar.my.id')
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
-  trustedOrigins: [env.FRONTEND_URL],
+  trustedOrigins: (request) => {
+    if (!isProd) {
+      const origin = request?.headers.get('origin')
+      return origin ? [...new Set([...frontendOrigins, origin])] : frontendOrigins
+    }
+    return frontendOrigins
+  },
   advanced: {
-    // Saat BETTER_AUTH_URL=https://api-iot.evanazhar.my.id, frontend & backend
-    // beda subdomain → cookie pakai root domain supaya state ikut terkirim ke
-    // callback. Mode local (localhost) TIDAK boleh pakai domain ini (browser
-    // akan menolak cookie), jadi dinonaktifkan.
-    crossSubDomainCookies: isLocalAuthUrl
-      ? { enabled: false }
-      : { enabled: true, domain: 'evanazhar.my.id' },
+    // Cookie root domain hanya untuk subdomain evanazhar.my.id (produksi).
+    // Untuk localhost/LAN IP, jangan set domain supaya cookie bisa tersimpan.
+    crossSubDomainCookies: isEvanazharDomain
+      ? { enabled: true, domain: 'evanazhar.my.id' }
+      : { enabled: false },
     // Default cookie state hanya 5 menit; perhatian dialog Google bisa lewat
     // dari itu dan memicu "State not persisted correctly". Samakan dengan
     // masa berlaku verification di DB (10 menit).
@@ -30,6 +36,10 @@ export const auth = betterAuth({
     provider: 'pg',
     schema: { user, account, session, verification },
   }),
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 8,
+  },
   socialProviders: {
     google: {
       clientId: env.GOOGLE_CLIENT_ID,
@@ -38,6 +48,7 @@ export const auth = betterAuth({
       prompt: 'select_account',
     },
   },
+  plugins: [username()],
   user: {
     additionalFields: {
       // role tidak bisa diubah dari client; diangkat manual lewat SQL

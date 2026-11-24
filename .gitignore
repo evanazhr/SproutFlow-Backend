@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.online.backup
 .env.backup
 compose.env
 .dev.vars

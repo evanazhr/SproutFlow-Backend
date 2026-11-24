@@ -5,7 +5,6 @@ import type { AppEnv } from '../app.js'
 import { db } from '../db/index.js'
 import { deviceSettings, devices } from '../db/schema.js'
 import { ApiError } from '../lib/http.js'
-import { requireAdmin } from '../middleware/requireAdmin.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 import {
   deviceParamsSchema,
@@ -93,7 +92,6 @@ export function registerDeviceRoutes(app: Hono<AppEnv>) {
   app.post(
     '/api/devices/:id/pump',
     requireAuth,
-    requireAdmin,
     async (c, next) => {
       const key = c.get('session')?.user.id ?? 'unknown'
       const now = Date.now()
@@ -119,12 +117,12 @@ export function registerDeviceRoutes(app: Hono<AppEnv>) {
     },
   )
 
-  app.get('/api/devices/:id/settings', requireAuth, requireAdmin, async (c) => {
+  app.get('/api/devices/:id/settings', requireAuth, async (c) => {
     const { id } = parse(deviceParamsSchema, c.req.param())
     return c.json({ data: await getOrCreateSettings(id) })
   })
 
-  app.put('/api/devices/:id/settings', requireAuth, requireAdmin, async (c) => {
+  app.put('/api/devices/:id/settings', requireAuth, async (c) => {
     const { id } = parse(deviceParamsSchema, c.req.param())
     const { moisture_threshold, pump_mode } = parse(settingsSchema, await c.req.json())
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { auth } from './auth.js'
-import { env } from './env.js'
+import { frontendOrigins, isProd } from './env.js'
 import { ApiError } from './lib/http.js'
 import type { AuthedSession } from './middleware/requireAuth.js'
 import { registerDeviceRoutes } from './routes/devices.js'
@@ -22,7 +22,19 @@ app.use('*', async (c, next) => {
   await next()
 })
 
-app.use('/api/*', cors({ origin: env.FRONTEND_URL, credentials: true }))
+app.use(
+  '/api/*',
+  cors({
+    origin: (origin) => {
+      if (!origin) return frontendOrigins[0] ?? null
+      if (frontendOrigins.includes(origin)) return origin
+      // Dev LAN: izinkan origin http/https apa pun agar HP di jaringan sama bisa akses
+      if (!isProd) return origin
+      return null
+    },
+    credentials: true,
+  }),
+)
 
 // Better Auth sudah web-standard: terima Request, balas Response.
 app.all('/api/auth/*', (c) => auth.handler(c.req.raw))

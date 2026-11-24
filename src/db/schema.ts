@@ -22,6 +22,9 @@ export const user = pgTable('user', {
   image: text('image'),
   // Field tambahan aplikasi: role dikelola manual di database (default 'user')
   role: text('role').notNull().default('user'),
+  // Better Auth username plugin
+  username: text('username').unique(),
+  displayUsername: text('display_username'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .notNull()
     .defaultNow(),

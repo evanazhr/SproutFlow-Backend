@@ -11,7 +11,7 @@ const envSchema = z.object({
 
   BETTER_AUTH_SECRET: z.string().min(16, 'BETTER_AUTH_SECRET minimal 16 karakter'),
   BETTER_AUTH_URL: z.string().default('http://localhost:4000'),
-  FRONTEND_URL: z.string().default('http://localhost:3000'),
+  FRONTEND_URL: z.string().default('http://localhost:3000,http://localhost:3001'),
 
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
@@ -41,3 +41,6 @@ if (!parsed.success) {
 
 export const env = parsed.data
 export const isProd = env.NODE_ENV === 'production'
+export const frontendOrigins = env.FRONTEND_URL.split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
