@@ -100,3 +100,8 @@ export function closeMqtt() {
     c.end(false, () => resolve())
   })
 }
+
+/** Status koneksi broker tanpa memicu pembuatan koneksi baru (dipakai health check). */
+export function isMqttConnected(): boolean {
+  return client?.connected ?? false
+}

@@ -15,8 +15,10 @@ import { startWatchdog } from './services/watchdog.js'
 dns.setDefaultResultOrder('ipv4first')
 net.setDefaultAutoSelectFamily(false)
 
-const server = serve({ fetch: app.fetch, port: env.PORT, hostname: '0.0.0.0' }, () => {
-  logger.info(`SproutFlow backend (Hono) berjalan di 0.0.0.0:${env.PORT}`)
+const server = serve({ fetch: app.fetch, port: env.PORT, hostname: '::' }, () => {
+  // '::' = dual-stack (IPv4 + IPv6). Wajib: cloudflared kadang mengarah ke
+  // [::1]:4000; kalau hanya bind 0.0.0.0, request lewat tunnel jadi 502.
+  logger.info(`SproutFlow backend (Hono) berjalan di [::]:${env.PORT}`)
   getMqttClient()
   const stopWatchdog = startWatchdog()
   const stopAutoPump = startAutoPump()
